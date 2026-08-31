@@ -1,5 +1,5 @@
-const CACHE_NAME = "bark-and-guard-v2";
-const BASE = new URL("./", self.location.href).pathname;
+const CACHE_NAME = "bark-and-guard-v3";
+const BASE = "/bark-and-guard/";
 
 const CORE_ASSETS = [
   BASE,
@@ -8,7 +8,9 @@ const CORE_ASSETS = [
   BASE + "src/main.js",
   BASE + "src/pwa/install.js",
   BASE + "src/scenes/Stage1Scene.js",
-  BASE + "src/data/stage1.js"
+  BASE + "src/data/stage1.js",
+  BASE + "assets/app/icons/icon-192.png",
+  BASE + "assets/app/icons/icon-512.png"
 ];
 
 self.addEventListener("install", (event) => {
@@ -27,7 +29,7 @@ self.addEventListener("activate", (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((key) => key !== CACHE_NAME)
+            .filter((key) => key.startsWith("bark-and-guard-") && key !== CACHE_NAME)
             .map((key) => caches.delete(key))
         )
       )
@@ -41,17 +43,34 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   const sameOrigin = url.origin === self.location.origin;
 
-  // During development, HTML/JS/data should update immediately after a commit.
-  const networkFirst =
-    event.request.mode === "navigate" ||
-    (sameOrigin &&
-      (
-        url.pathname.endsWith(".js") ||
-        url.pathname.endsWith(".json") ||
-        url.pathname.endsWith(".webmanifest")
-      ));
+  // Navigation must always have a usable app-shell fallback.
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(BASE + "index.html", copy));
+          return response;
+        })
+        .catch(async () => {
+          return (
+            (await caches.match(BASE + "index.html")) ||
+            (await caches.match(BASE))
+          );
+        })
+    );
+    return;
+  }
 
-  if (networkFirst) {
+  // Development code should prefer the latest GitHub Pages version.
+  if (
+    sameOrigin &&
+    (
+      url.pathname.endsWith(".js") ||
+      url.pathname.endsWith(".json") ||
+      url.pathname.endsWith(".webmanifest")
+    )
+  ) {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
@@ -64,6 +83,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Images and other static files: cache-first.
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;

@@ -4,14 +4,12 @@
   "short_name": "BARK & GUARD",
   "description": "A premium Shih Tzu tower-defense game.",
   "lang": "en",
-  "start_url": "./?source=pwa",
-  "scope": "./",
-  "display": "fullscreen",
+  "start_url": "/bark-and-guard/?source=pwa",
+  "scope": "/bark-and-guard/",
+  "display": "standalone",
   "display_override": [
     "fullscreen",
-    "standalone",
-    "minimal-ui",
-    "browser"
+    "standalone"
   ],
   "orientation": "landscape",
   "background_color": "#051f41",
@@ -22,28 +20,31 @@
   ],
   "icons": [
     {
-      "src": "./assets/app/icons/icon-192.png",
+      "src": "/bark-and-guard/assets/app/icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "./assets/app/icons/icon-512.png",
+      "src": "/bark-and-guard/assets/app/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "./assets/app/icons/icon-maskable-192.png",
+      "src": "/bark-and-guard/assets/app/icons/icon-maskable-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "./assets/app/icons/icon-maskable-512.png",
+      "src": "/bark-and-guard/assets/app/icons/icon-maskable-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
     }
-  ]
+  ],
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  }
 }

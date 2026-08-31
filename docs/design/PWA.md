@@ -1,37 +1,26 @@
-# PWA Install Contract
+# PWA Launch and Install Contract
 
-BARK & GUARD is installable from its GitHub Pages URL as a Progressive Web App.
+## Fixed failure mode
 
-## Canonical files
+The Android install control must never become a dead button.
 
-- `manifest.webmanifest`
-- `service-worker.js`
-- `src/pwa/install.js`
-- `assets/app/icons/`
+- If Chromium provides `beforeinstallprompt`, INSTALL invokes the native prompt.
+- If Chromium does not provide it, INSTALL opens clear browser install instructions.
+- iOS opens Safari Add to Home Screen instructions.
+- Installed launch uses the explicit `/bark-and-guard/` GitHub Pages scope.
 
-## App identity
+## Canonical app URL
 
-- Name: `BARK & GUARD: Shih Tzu Defense`
-- Short name: `BARK & GUARD`
-- Orientation: landscape
-- Preferred display: fullscreen
-- Theme: deep navy + gold
+`https://grolygori789-crypto.github.io/bark-and-guard/`
 
-## Icon rules
+## Important during testing
 
-The icon master is stored at:
-`assets/app/icons/icon-master-1024.png`
+After this patch is deployed, remove any previously installed broken BARK & GUARD
+shortcut/app once, then reload the site and install it again. Android may retain
+the old manifest/start URL for an existing installation.
 
-Normal icons and maskable icons are separate. The maskable version deliberately keeps the Shih Tzu and shield inside a safe area so Android launchers may crop the icon into a circle, squircle, rounded square, or other adaptive shape without cutting off the subject.
+## Service worker
 
-Do not create `icon-final2`, `icon-new`, or version-suffixed duplicates. Update the canonical master and regenerate the canonical sizes.
-
-## Install behavior
-
-### Android / Chromium browsers
-When the browser exposes the `beforeinstallprompt` event, the game shows its own BARK & GUARD install card. Tapping INSTALL invokes the native browser install prompt.
-
-### iPhone / iPad
-iOS does not expose `beforeinstallprompt`. The game therefore shows an install card that opens concise Safari instructions for Add to Home Screen.
-
-The browser/OS ultimately controls whether and when a native installation sheet is displayed; a website cannot force the native prompt without browser support/user interaction.
+Navigation is network-first with a cached `index.html` fallback so launching
+from the home-screen icon does not fail simply because a query-string start URL
+was not separately cached.
