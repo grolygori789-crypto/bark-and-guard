@@ -1,4 +1,67 @@
-const C="bark-and-guard-v7",B="/bark-and-guard/";
-self.addEventListener("install",e=>e.waitUntil(caches.open(C).then(c=>c.add(B+"index.html")).then(()=>self.skipWaiting())));
-self.addEventListener("activate",e=>e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x.startsWith("bark-and-guard-")&&x!==C).map(x=>caches.delete(x)))).then(()=>self.clients.claim())));
-self.addEventListener("fetch",e=>{if(e.request.method!=="GET")return;e.respondWith(fetch(e.request).then(r=>{if(r&&(r.status===200||r.type==="opaque")){const q=r.clone();caches.open(C).then(c=>c.put(e.request,q));}return r;}).catch(async()=>{const q=await caches.match(e.request);if(q)return q;if(e.request.mode==="navigate")return caches.match(B+"index.html");throw new Error("offline");}));});
+const CACHE_NAME = "bark-and-guard-v8";
+const BASE = "/bark-and-guard/";
+const INDEX = BASE + "index.html";
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll([BASE, INDEX]))
+      .then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches.keys()
+      .then((keys) =>
+        Promise.all(
+          keys
+            .filter((key) => key.startsWith("bark-and-guard-") && key !== CACHE_NAME)
+            .map((key) => caches.delete(key))
+        )
+      )
+      .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener("fetch", (event) => {
+  if (event.request.method !== "GET") return;
+
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(BASE, { cache: "no-store" })
+        .then((response) => {
+          if (!response || !response.ok) {
+            throw new Error("App shell unavailable");
+          }
+
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(BASE, copy.clone());
+            cache.put(INDEX, copy);
+          });
+
+          return response;
+        })
+        .catch(async () => {
+          return (
+            (await caches.match(BASE)) ||
+            (await caches.match(INDEX))
+          );
+        })
+    );
+    return;
+  }
+
+  event.respondWith(
+    fetch(event.request)
+      .then((response) => {
+        if (response && response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
+  );
+});
