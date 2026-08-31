@@ -1,7 +1,7 @@
 import { STAGE_1 } from "../data/stage1.js";
 
-const W = STAGE_1.canvas.width;
-const H = STAGE_1.canvas.height;
+const SRC_W = STAGE_1.canvas.width;
+const SRC_H = STAGE_1.canvas.height;
 
 export class Stage1Scene extends Phaser.Scene {
   constructor() {
@@ -13,6 +13,7 @@ export class Stage1Scene extends Phaser.Scene {
     this.guardians = new Map();
     this.enemiesAlive = 0;
     this.enemies = [];
+    this.guardSpotViews = [];
   }
 
   preload() {
@@ -28,35 +29,81 @@ export class Stage1Scene extends Phaser.Scene {
         ? requestedTime
         : STAGE_1.defaultTimeOfDay;
 
-    this.add
-      .image(W / 2, H / 2, `stage1-bg-${this.timeOfDay}`)
-      .setDisplaySize(W, H)
+    this.background = this.add
+      .image(0, 0, `stage1-bg-${this.timeOfDay}`)
+      .setOrigin(0.5)
       .setDepth(0);
 
-    // Graybox-only overlays. They are code layers, never baked into the art.
-    this.makeDebugPath();
-    this.makeGuardSpots();
-    this.makeHUD();
+    this.pathGraphics = this.add.graphics().setDepth(5);
 
-    this.add
-      .text(W / 2, 106, `STAGE 1  •  ${STAGE_1.name.toUpperCase()}  •  ${this.timeOfDay.toUpperCase()}`, {
-        fontFamily: "system-ui",
-        fontSize: "25px",
-        fontStyle: "700",
-        color: "#fff6d7",
-        stroke: "#2b2016",
-        strokeThickness: 5
-      })
-      .setOrigin(0.5)
-      .setDepth(20);
+    this.titleText = this.add.text(0, 0, "", {
+      fontFamily: "system-ui",
+      fontSize: "24px",
+      fontStyle: "700",
+      color: "#fff6d7",
+      stroke: "#2b2016",
+      strokeThickness: 5
+    }).setOrigin(0.5).setDepth(20);
+
+    this.createGuardSpots();
+    this.createHUD();
+    this.refreshLayout();
+
+    this.scale.on("resize", this.refreshLayout, this);
   }
 
-  makeDebugPath() {
-    const g = this.add.graphics().setDepth(5);
-    const pts = STAGE_1.path.map(
-      ([x, y]) => new Phaser.Math.Vector2(x * W, y * H)
-    );
+  getMetrics() {
+    const vw = this.scale.width;
+    const vh = this.scale.height;
+    const coverScale = Math.max(vw / SRC_W, vh / SRC_H);
+    const displayW = SRC_W * coverScale;
+    const displayH = SRC_H * coverScale;
+    const offsetX = (vw - displayW) / 2;
+    const offsetY = (vh - displayH) / 2;
 
+    return {
+      vw,
+      vh,
+      coverScale,
+      displayW,
+      displayH,
+      offsetX,
+      offsetY
+    };
+  }
+
+  mapPoint(nx, ny) {
+    const m = this.metrics;
+    return {
+      x: m.offsetX + nx * m.displayW,
+      y: m.offsetY + ny * m.displayH
+    };
+  }
+
+  refreshLayout() {
+    this.metrics = this.getMetrics();
+
+    const { vw, vh, displayW, displayH } = this.metrics;
+
+    this.background
+      .setPosition(vw / 2, vh / 2)
+      .setDisplaySize(displayW, displayH);
+
+    this.drawDebugPath();
+    this.positionGuardSpots();
+    this.positionGuardians();
+    this.positionHUD();
+
+    this.titleText
+      .setPosition(vw / 2, 84)
+      .setText(`STAGE 1  •  ${STAGE_1.name.toUpperCase()}  •  ${this.timeOfDay.toUpperCase()}`);
+  }
+
+  drawDebugPath() {
+    const g = this.pathGraphics;
+    g.clear();
+
+    const pts = STAGE_1.path.map(([x, y]) => this.mapPoint(x, y));
     g.lineStyle(5, 0xffdc72, 0.82);
     g.beginPath();
     g.moveTo(pts[0].x, pts[0].y);
@@ -65,29 +112,24 @@ export class Stage1Scene extends Phaser.Scene {
     }
     g.strokePath();
 
-    // Spawn
     g.fillStyle(0xd84735, 0.95);
     g.fillCircle(pts[0].x, pts[0].y, 13);
 
-    // House goal
     const goal = pts[pts.length - 1];
     g.fillStyle(0x64c078, 0.95);
     g.fillCircle(goal.x, goal.y, 15);
   }
 
-  makeGuardSpots() {
-    STAGE_1.guardSpots.forEach(([nx, ny], index) => {
-      const x = nx * W;
-      const y = ny * H;
-
+  createGuardSpots() {
+    STAGE_1.guardSpots.forEach((_, index) => {
       const spot = this.add
-        .circle(x, y, 31, 0x238b6c, 0.72)
+        .circle(0, 0, 31, 0x238b6c, 0.72)
         .setStrokeStyle(3, 0xe2fff0, 0.98)
         .setDepth(10)
         .setInteractive({ useHandCursor: true });
 
       const label = this.add
-        .text(x, y, `${index + 1}`, {
+        .text(0, 0, `${index + 1}`, {
           fontFamily: "system-ui",
           fontSize: "22px",
           fontStyle: "800",
@@ -96,13 +138,26 @@ export class Stage1Scene extends Phaser.Scene {
         .setOrigin(0.5)
         .setDepth(11);
 
-      spot.on("pointerdown", () =>
-        this.placePlaceholderGuardian(index, x, y, spot, label)
-      );
+      spot.on("pointerdown", () => this.placePlaceholderGuardian(index, spot, label));
+      this.guardSpotViews.push({ spot, label });
     });
   }
 
-  placePlaceholderGuardian(index, x, y, spot, label) {
+  positionGuardSpots() {
+    STAGE_1.guardSpots.forEach(([nx, ny], index) => {
+      const { x, y } = this.mapPoint(nx, ny);
+      const view = this.guardSpotViews[index];
+      view.spot.setPosition(x, y);
+      view.label.setPosition(x, y);
+    });
+  }
+
+  getGuardPixelPosition(index) {
+    const [nx, ny] = STAGE_1.guardSpots[index];
+    return this.mapPoint(nx, ny);
+  }
+
+  placePlaceholderGuardian(index, spot, label) {
     if (this.guardians.has(index)) return;
 
     const cost = 100;
@@ -112,85 +167,81 @@ export class Stage1Scene extends Phaser.Scene {
     }
 
     this.coins -= cost;
-    this.guardians.set(index, {
-      x,
-      y,
-      range: 150,
-      nextShot: 0
-    });
 
-    spot.setFillStyle(0x397a48, 0.25).disableInteractive();
-    label.setVisible(false);
-
-    // Placeholder only. Final Shih Tzu sprites come later.
+    const { x, y } = this.getGuardPixelPosition(index);
     const body = this.add
       .circle(x, y, 24, 0xf4e6c9, 1)
       .setStrokeStyle(4, 0x4a3022, 1)
       .setDepth(13);
 
-    this.add
-      .triangle(
-        x - 14,
-        y - 23,
-        0,
-        17,
-        9,
-        0,
-        18,
-        17,
-        0x4a3022,
-        1
-      )
+    const earLeft = this.add
+      .triangle(x - 14, y - 23, 0, 17, 9, 0, 18, 17, 0x4a3022, 1)
       .setDepth(12);
 
-    this.add
-      .triangle(
-        x + 14,
-        y - 23,
-        0,
-        17,
-        9,
-        0,
-        18,
-        17,
-        0x4a3022,
-        1
-      )
+    const earRight = this.add
+      .triangle(x + 14, y - 23, 0, 17, 9, 0, 18, 17, 0x4a3022, 1)
       .setDepth(12);
 
-    body.guardIndex = index;
+    this.guardians.set(index, {
+      index,
+      nextShot: 0,
+      range: 0,
+      body,
+      earLeft,
+      earRight
+    });
+
+    spot.setFillStyle(0x397a48, 0.25).disableInteractive();
+    label.setVisible(false);
+
+    this.positionGuardians();
     this.refreshHUD();
   }
 
-  makeHUD() {
-    this.add
-      .rectangle(W / 2, 38, 610, 58, 0x17130f, 0.88)
+  positionGuardians() {
+    const rangeBase = 150 * this.metrics.coverScale;
+
+    for (const guard of this.guardians.values()) {
+      const { x, y } = this.getGuardPixelPosition(guard.index);
+      guard.x = x;
+      guard.y = y;
+      guard.range = rangeBase;
+
+      guard.body.setPosition(x, y);
+      guard.earLeft.setPosition(x - 14, y - 23);
+      guard.earRight.setPosition(x + 14, y - 23);
+    }
+  }
+
+  createHUD() {
+    this.hudPanel = this.add
+      .rectangle(0, 0, 610, 58, 0x17130f, 0.88)
       .setStrokeStyle(2, 0xd6b66f, 0.45)
       .setDepth(30);
 
     this.coinText = this.add
-      .text(W / 2 - 245, 38, "", this.hudStyle())
+      .text(0, 0, "", this.hudStyle())
       .setOrigin(0, 0.5)
       .setDepth(31);
 
     this.hpText = this.add
-      .text(W / 2 - 50, 38, "", this.hudStyle())
+      .text(0, 0, "", this.hudStyle())
       .setOrigin(0, 0.5)
       .setDepth(31);
 
     this.waveText = this.add
-      .text(W / 2 + 120, 38, "", this.hudStyle())
+      .text(0, 0, "", this.hudStyle())
       .setOrigin(0, 0.5)
       .setDepth(31);
 
-    const button = this.add
-      .rectangle(W - 118, H - 52, 182, 54, 0x9d4f28, 0.96)
+    this.startButton = this.add
+      .rectangle(0, 0, 182, 54, 0x9d4f28, 0.96)
       .setStrokeStyle(3, 0xffd78a, 0.85)
       .setDepth(30)
       .setInteractive({ useHandCursor: true });
 
-    this.add
-      .text(W - 118, H - 52, "START WAVE", {
+    this.startButtonLabel = this.add
+      .text(0, 0, "START WAVE", {
         fontFamily: "system-ui",
         fontSize: "20px",
         fontStyle: "800",
@@ -199,12 +250,24 @@ export class Stage1Scene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(31);
 
-    button.on("pointerdown", async () => {
+    this.startButton.on("pointerdown", async () => {
       await this.tryEnterFullscreen();
       if (!this.waveRunning) this.startWave();
     });
 
     this.refreshHUD();
+  }
+
+  positionHUD() {
+    const { vw, vh } = this.metrics;
+
+    this.hudPanel.setPosition(vw / 2, 38);
+    this.coinText.setPosition(vw / 2 - 245, 38);
+    this.hpText.setPosition(vw / 2 - 50, 38);
+    this.waveText.setPosition(vw / 2 + 120, 38);
+
+    this.startButton.setPosition(vw - 118, vh - 52);
+    this.startButtonLabel.setPosition(vw - 118, vh - 52);
   }
 
   async tryEnterFullscreen() {
@@ -216,7 +279,7 @@ export class Stage1Scene extends Phaser.Scene {
         await screen.orientation.lock("landscape");
       }
     } catch (_) {
-      // Fullscreen/orientation APIs vary by mobile browser; gameplay must still run.
+      // Mobile browser support varies; the game still works without this.
     }
   }
 
@@ -235,6 +298,10 @@ export class Stage1Scene extends Phaser.Scene {
     this.waveText.setText(`WAVE  ${this.wave}`);
   }
 
+  getPathPixels() {
+    return STAGE_1.path.map(([x, y]) => this.mapPoint(x, y));
+  }
+
   startWave() {
     this.waveRunning = true;
     const count = 6 + (this.wave - 1) * 2;
@@ -249,10 +316,7 @@ export class Stage1Scene extends Phaser.Scene {
   }
 
   spawnCat() {
-    const pts = STAGE_1.path.map(([x, y]) => ({
-      x: x * W,
-      y: y * H
-    }));
+    const pts = this.getPathPixels();
 
     const cat = this.add
       .circle(pts[0].x, pts[0].y, 17, 0x71503c, 1)
@@ -262,8 +326,8 @@ export class Stage1Scene extends Phaser.Scene {
     cat.hp = 45 + this.wave * 9;
     cat.pathIndex = 0;
     cat.speed =
-      STAGE_1.pacing.baseEnemySpeed +
-      this.wave * STAGE_1.pacing.waveSpeedStep;
+      STAGE_1.pacing.baseEnemySpeed * this.metrics.coverScale +
+      this.wave * STAGE_1.pacing.waveSpeedStep * this.metrics.coverScale;
     cat.dead = false;
     cat.path = pts;
 
@@ -420,8 +484,10 @@ export class Stage1Scene extends Phaser.Scene {
   }
 
   flashMessage(text) {
+    const { vw, vh } = this.metrics;
+
     const message = this.add
-      .text(W / 2, H - 112, text, {
+      .text(vw / 2, vh - 112, text, {
         fontFamily: "system-ui",
         fontSize: "23px",
         fontStyle: "800",
@@ -435,7 +501,7 @@ export class Stage1Scene extends Phaser.Scene {
     this.tweens.add({
       targets: message,
       alpha: 0,
-      y: H - 138,
+      y: vh - 138,
       duration: 1300,
       delay: 650,
       onComplete: () => message.destroy()

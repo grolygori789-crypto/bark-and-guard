@@ -8,11 +8,8 @@ export const STAGE_1 = {
     night: "./assets/stages/stage-01/night/background.png"
   },
 
-  // Development default. Future campaign logic can choose this per stage.
   defaultTimeOfDay: "day",
 
-  // Calibrated against the approved 1536x864 master geometry.
-  // Coordinates are normalized so Day and Night share one exact gameplay map.
   path: [
     [0.16602, 0.75231],
     [0.18880, 0.72917],
