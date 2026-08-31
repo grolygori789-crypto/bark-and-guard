@@ -3,12 +3,20 @@
 ## Game
 **BARK & GUARD: Shih Tzu Defense**
 
-## Stage 1
-- Night environment
-- Approved master background: `assets/stages/stage-01/night/background.png`
-- Seven Guard Spots
-- Winding fixed path from gate to house
-- Stage geometry stored in `src/data/stage1.js`, never baked into UI artwork
+## Stage 1 master scene
+- Canvas: 1536×864 (16:9)
+- Modern house and modern landscaped garden
+- Small decorative pond
+- Long winding stone route from the front gate to the house
+- Day and Night use the same gameplay geometry
+- UI, Guard Spots, route debug, characters and VFX are code layers and are never baked into either master image
+
+### Canonical master files
+- Day: `assets/stages/stage-01/day/background.png`
+- Night: `assets/stages/stage-01/night/background.png`
+
+These two files are user-approved production masters.
+**Do not regenerate, redesign, relight or replace them unless the user explicitly requests it.**
 
 ## Shih Tzu roster
 1. Mochi — Core Defender
