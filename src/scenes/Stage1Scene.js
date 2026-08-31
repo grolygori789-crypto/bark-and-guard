@@ -3,6 +3,8 @@ import { STAGE_1 } from "../data/stage1.js";
 const SRC_W = STAGE_1.canvas.width;
 const SRC_H = STAGE_1.canvas.height;
 
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
 export class Stage1Scene extends Phaser.Scene {
   constructor() {
     super("stage1");
@@ -29,21 +31,45 @@ export class Stage1Scene extends Phaser.Scene {
         ? requestedTime
         : STAGE_1.defaultTimeOfDay;
 
+    const backgroundKey = `stage1-bg-${this.timeOfDay}`;
+
+    // Decorative full-viewport backdrop. This fills ultra-wide phones without
+    // black bars, while the real 16:9 gameplay board remains fully visible.
+    this.backdrop = this.add
+      .image(0, 0, backgroundKey)
+      .setOrigin(0.5)
+      .setDepth(-3)
+      .setTint(0x70839a);
+
+    this.backdropShade = this.add
+      .rectangle(0, 0, 1, 1, 0x061426, 0.43)
+      .setOrigin(0.5)
+      .setDepth(-2);
+
+    // Canonical 16:9 gameplay board. Never crop this layer.
     this.background = this.add
-      .image(0, 0, `stage1-bg-${this.timeOfDay}`)
+      .image(0, 0, backgroundKey)
       .setOrigin(0.5)
       .setDepth(0);
 
+    this.boardShadow = this.add
+      .rectangle(0, 0, 1, 1, 0x000000, 0.16)
+      .setOrigin(0.5)
+      .setDepth(-1);
+
     this.pathGraphics = this.add.graphics().setDepth(5);
 
-    this.titleText = this.add.text(0, 0, "", {
-      fontFamily: "system-ui",
-      fontSize: "24px",
-      fontStyle: "700",
-      color: "#fff6d7",
-      stroke: "#2b2016",
-      strokeThickness: 5
-    }).setOrigin(0.5).setDepth(20);
+    this.stageLabel = this.add
+      .text(0, 0, "", {
+        fontFamily: "system-ui",
+        fontSize: "14px",
+        fontStyle: "700",
+        color: "#fff7df",
+        stroke: "#22190f",
+        strokeThickness: 3
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(20);
 
     this.createGuardSpots();
     this.createHUD();
@@ -55,48 +81,88 @@ export class Stage1Scene extends Phaser.Scene {
   getMetrics() {
     const vw = this.scale.width;
     const vh = this.scale.height;
-    const coverScale = Math.max(vw / SRC_W, vh / SRC_H);
-    const displayW = SRC_W * coverScale;
-    const displayH = SRC_H * coverScale;
-    const offsetX = (vw - displayW) / 2;
-    const offsetY = (vh - displayH) / 2;
+
+    // FIT keeps every pixel of the 16:9 gameplay board visible.
+    const boardScale = Math.min(vw / SRC_W, vh / SRC_H);
+    const boardW = SRC_W * boardScale;
+    const boardH = SRC_H * boardScale;
+    const boardX = (vw - boardW) / 2;
+    const boardY = (vh - boardH) / 2;
+
+    // COVER is only used for the decorative backdrop behind the board.
+    const backdropScale = Math.max(vw / SRC_W, vh / SRC_H);
+    const backdropW = SRC_W * backdropScale;
+    const backdropH = SRC_H * backdropScale;
 
     return {
       vw,
       vh,
-      coverScale,
-      displayW,
-      displayH,
-      offsetX,
-      offsetY
+      boardScale,
+      boardW,
+      boardH,
+      boardX,
+      boardY,
+      backdropW,
+      backdropH
     };
   }
 
   mapPoint(nx, ny) {
     const m = this.metrics;
     return {
-      x: m.offsetX + nx * m.displayW,
-      y: m.offsetY + ny * m.displayH
+      x: m.boardX + nx * m.boardW,
+      y: m.boardY + ny * m.boardH
     };
   }
 
   refreshLayout() {
     this.metrics = this.getMetrics();
 
-    const { vw, vh, displayW, displayH } = this.metrics;
+    const {
+      vw,
+      vh,
+      boardW,
+      boardH,
+      boardX,
+      boardY,
+      backdropW,
+      backdropH
+    } = this.metrics;
+
+    this.backdrop
+      .setPosition(vw / 2, vh / 2)
+      .setDisplaySize(backdropW, backdropH);
+
+    this.backdropShade
+      .setPosition(vw / 2, vh / 2)
+      .setSize(vw, vh);
+
+    this.boardShadow
+      .setPosition(vw / 2, vh / 2 + 2)
+      .setSize(boardW + 12, boardH + 12);
 
     this.background
       .setPosition(vw / 2, vh / 2)
-      .setDisplaySize(displayW, displayH);
+      .setDisplaySize(boardW, boardH);
+
+    this.visual = {
+      spotRadius: clamp(boardH * 0.026, 13, 19),
+      spotFont: clamp(boardH * 0.025, 12, 17),
+      pathWidth: clamp(boardH * 0.004, 2, 3.2),
+      markerRadius: clamp(boardH * 0.013, 6, 9),
+      unitRadius: clamp(boardH * 0.023, 12, 18)
+    };
 
     this.drawDebugPath();
     this.positionGuardSpots();
     this.positionGuardians();
     this.positionHUD();
 
-    this.titleText
-      .setPosition(vw / 2, 84)
-      .setText(`STAGE 1  •  ${STAGE_1.name.toUpperCase()}  •  ${this.timeOfDay.toUpperCase()}`);
+    const safeInset = clamp(boardH * 0.018, 8, 14);
+    this.stageLabel
+      .setPosition(boardX + safeInset, boardY + safeInset + 8)
+      .setFontSize(clamp(boardH * 0.022, 11, 15))
+      .setText(`STAGE 1  •  ${this.timeOfDay.toUpperCase()}`);
   }
 
   drawDebugPath() {
@@ -104,41 +170,47 @@ export class Stage1Scene extends Phaser.Scene {
     g.clear();
 
     const pts = STAGE_1.path.map(([x, y]) => this.mapPoint(x, y));
-    g.lineStyle(5, 0xffdc72, 0.82);
+
+    g.lineStyle(this.visual.pathWidth, 0xffdc72, 0.72);
     g.beginPath();
     g.moveTo(pts[0].x, pts[0].y);
+
     for (let i = 1; i < pts.length; i++) {
       g.lineTo(pts[i].x, pts[i].y);
     }
+
     g.strokePath();
 
-    g.fillStyle(0xd84735, 0.95);
-    g.fillCircle(pts[0].x, pts[0].y, 13);
+    g.fillStyle(0xd84735, 0.94);
+    g.fillCircle(pts[0].x, pts[0].y, this.visual.markerRadius);
 
     const goal = pts[pts.length - 1];
-    g.fillStyle(0x64c078, 0.95);
-    g.fillCircle(goal.x, goal.y, 15);
+    g.fillStyle(0x64c078, 0.94);
+    g.fillCircle(goal.x, goal.y, this.visual.markerRadius);
   }
 
   createGuardSpots() {
     STAGE_1.guardSpots.forEach((_, index) => {
       const spot = this.add
-        .circle(0, 0, 31, 0x238b6c, 0.72)
-        .setStrokeStyle(3, 0xe2fff0, 0.98)
+        .circle(0, 0, 16, 0x238b6c, 0.68)
+        .setStrokeStyle(2, 0xe2fff0, 0.94)
         .setDepth(10)
         .setInteractive({ useHandCursor: true });
 
       const label = this.add
         .text(0, 0, `${index + 1}`, {
           fontFamily: "system-ui",
-          fontSize: "22px",
+          fontSize: "14px",
           fontStyle: "800",
           color: "#ffffff"
         })
         .setOrigin(0.5)
         .setDepth(11);
 
-      spot.on("pointerdown", () => this.placePlaceholderGuardian(index, spot, label));
+      spot.on("pointerdown", () =>
+        this.placePlaceholderGuardian(index, spot, label)
+      );
+
       this.guardSpotViews.push({ spot, label });
     });
   }
@@ -147,8 +219,19 @@ export class Stage1Scene extends Phaser.Scene {
     STAGE_1.guardSpots.forEach(([nx, ny], index) => {
       const { x, y } = this.mapPoint(nx, ny);
       const view = this.guardSpotViews[index];
-      view.spot.setPosition(x, y);
-      view.label.setPosition(x, y);
+
+      view.spot
+        .setPosition(x, y)
+        .setRadius(this.visual.spotRadius)
+        .setStrokeStyle(
+          clamp(this.metrics.boardScale * 2.4, 1.4, 2.4),
+          0xe2fff0,
+          0.94
+        );
+
+      view.label
+        .setPosition(x, y)
+        .setFontSize(this.visual.spotFont);
     });
   }
 
@@ -161,6 +244,7 @@ export class Stage1Scene extends Phaser.Scene {
     if (this.guardians.has(index)) return;
 
     const cost = 100;
+
     if (this.coins < cost) {
       this.flashMessage("Not enough treats!");
       return;
@@ -169,17 +253,18 @@ export class Stage1Scene extends Phaser.Scene {
     this.coins -= cost;
 
     const { x, y } = this.getGuardPixelPosition(index);
+
     const body = this.add
-      .circle(x, y, 24, 0xf4e6c9, 1)
-      .setStrokeStyle(4, 0x4a3022, 1)
+      .circle(x, y, this.visual.unitRadius, 0xf4e6c9, 1)
+      .setStrokeStyle(3, 0x4a3022, 1)
       .setDepth(13);
 
     const earLeft = this.add
-      .triangle(x - 14, y - 23, 0, 17, 9, 0, 18, 17, 0x4a3022, 1)
+      .triangle(0, 0, 0, 13, 7, 0, 14, 13, 0x4a3022, 1)
       .setDepth(12);
 
     const earRight = this.add
-      .triangle(x + 14, y - 23, 0, 17, 9, 0, 18, 17, 0x4a3022, 1)
+      .triangle(0, 0, 0, 13, 7, 0, 14, 13, 0x4a3022, 1)
       .setDepth(12);
 
     this.guardians.set(index, {
@@ -191,7 +276,7 @@ export class Stage1Scene extends Phaser.Scene {
       earRight
     });
 
-    spot.setFillStyle(0x397a48, 0.25).disableInteractive();
+    spot.setFillStyle(0x397a48, 0.22).disableInteractive();
     label.setVisible(false);
 
     this.positionGuardians();
@@ -199,51 +284,61 @@ export class Stage1Scene extends Phaser.Scene {
   }
 
   positionGuardians() {
-    const rangeBase = 150 * this.metrics.coverScale;
+    const unitR = this.visual.unitRadius;
+    const rangeBase = 150 * this.metrics.boardScale;
 
     for (const guard of this.guardians.values()) {
       const { x, y } = this.getGuardPixelPosition(guard.index);
+
       guard.x = x;
       guard.y = y;
       guard.range = rangeBase;
 
-      guard.body.setPosition(x, y);
-      guard.earLeft.setPosition(x - 14, y - 23);
-      guard.earRight.setPosition(x + 14, y - 23);
+      guard.body
+        .setPosition(x, y)
+        .setRadius(unitR);
+
+      guard.earLeft
+        .setPosition(x - unitR * 0.55, y - unitR * 0.9)
+        .setScale(unitR / 18);
+
+      guard.earRight
+        .setPosition(x + unitR * 0.55, y - unitR * 0.9)
+        .setScale(unitR / 18);
     }
   }
 
   createHUD() {
     this.hudPanel = this.add
-      .rectangle(0, 0, 610, 58, 0x17130f, 0.88)
-      .setStrokeStyle(2, 0xd6b66f, 0.45)
+      .rectangle(0, 0, 1, 1, 0x111722, 0.86)
+      .setStrokeStyle(1.5, 0xe6c679, 0.5)
       .setDepth(30);
 
     this.coinText = this.add
       .text(0, 0, "", this.hudStyle())
-      .setOrigin(0, 0.5)
+      .setOrigin(0.5)
       .setDepth(31);
 
     this.hpText = this.add
       .text(0, 0, "", this.hudStyle())
-      .setOrigin(0, 0.5)
+      .setOrigin(0.5)
       .setDepth(31);
 
     this.waveText = this.add
       .text(0, 0, "", this.hudStyle())
-      .setOrigin(0, 0.5)
+      .setOrigin(0.5)
       .setDepth(31);
 
     this.startButton = this.add
-      .rectangle(0, 0, 182, 54, 0x9d4f28, 0.96)
-      .setStrokeStyle(3, 0xffd78a, 0.85)
+      .rectangle(0, 0, 1, 1, 0x9d4f28, 0.94)
+      .setStrokeStyle(2, 0xffd78a, 0.82)
       .setDepth(30)
       .setInteractive({ useHandCursor: true });
 
     this.startButtonLabel = this.add
       .text(0, 0, "START WAVE", {
         fontFamily: "system-ui",
-        fontSize: "20px",
+        fontSize: "15px",
         fontStyle: "800",
         color: "#fff5d9"
       })
@@ -252,47 +347,85 @@ export class Stage1Scene extends Phaser.Scene {
 
     this.startButton.on("pointerdown", async () => {
       await this.tryEnterFullscreen();
-      if (!this.waveRunning) this.startWave();
+
+      if (!this.waveRunning) {
+        this.startWave();
+      }
     });
 
     this.refreshHUD();
   }
 
   positionHUD() {
-    const { vw, vh } = this.metrics;
+    const { vw, vh, boardW, boardH, boardX, boardY } = this.metrics;
 
-    this.hudPanel.setPosition(vw / 2, 38);
-    this.coinText.setPosition(vw / 2 - 245, 38);
-    this.hpText.setPosition(vw / 2 - 50, 38);
-    this.waveText.setPosition(vw / 2 + 120, 38);
+    const hudH = clamp(boardH * 0.072, 38, 48);
+    const hudW = clamp(boardW * 0.48, 360, 540);
+    const hudY = boardY + hudH * 0.64;
 
-    this.startButton.setPosition(vw - 118, vh - 52);
-    this.startButtonLabel.setPosition(vw - 118, vh - 52);
+    const textSize = clamp(boardH * 0.024, 12, 16);
+
+    this.hudPanel
+      .setPosition(vw / 2, hudY)
+      .setSize(hudW, hudH);
+
+    this.coinText
+      .setPosition(vw / 2 - hudW * 0.31, hudY)
+      .setFontSize(textSize);
+
+    this.hpText
+      .setPosition(vw / 2, hudY)
+      .setFontSize(textSize);
+
+    this.waveText
+      .setPosition(vw / 2 + hudW * 0.31, hudY)
+      .setFontSize(textSize);
+
+    const buttonW = clamp(boardW * 0.13, 112, 154);
+    const buttonH = clamp(boardH * 0.064, 36, 44);
+    const margin = clamp(boardH * 0.025, 12, 18);
+
+    this.startButton
+      .setPosition(
+        boardX + boardW - margin - buttonW / 2,
+        boardY + boardH - margin - buttonH / 2
+      )
+      .setSize(buttonW, buttonH);
+
+    this.startButtonLabel
+      .setPosition(this.startButton.x, this.startButton.y)
+      .setFontSize(clamp(buttonH * 0.36, 12, 15));
   }
 
   async tryEnterFullscreen() {
     try {
-      if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+      if (
+        !document.fullscreenElement &&
+        document.documentElement.requestFullscreen
+      ) {
         await document.documentElement.requestFullscreen();
       }
+
       if (screen.orientation?.lock) {
         await screen.orientation.lock("landscape");
       }
     } catch (_) {
-      // Mobile browser support varies; the game still works without this.
+      // Installed PWA and some mobile browsers already manage fullscreen.
     }
   }
 
   hudStyle() {
     return {
       fontFamily: "system-ui",
-      fontSize: "19px",
+      fontSize: "14px",
       fontStyle: "700",
       color: "#fff4d1"
     };
   }
 
   refreshHUD() {
+    if (!this.coinText) return;
+
     this.coinText.setText(`TREATS  ${this.coins}`);
     this.hpText.setText(`HOME  ${this.homeHP}`);
     this.waveText.setText(`WAVE  ${this.wave}`);
@@ -304,6 +437,7 @@ export class Stage1Scene extends Phaser.Scene {
 
   startWave() {
     this.waveRunning = true;
+
     const count = 6 + (this.wave - 1) * 2;
     this.enemiesAlive = count;
 
@@ -317,35 +451,52 @@ export class Stage1Scene extends Phaser.Scene {
 
   spawnCat() {
     const pts = this.getPathPixels();
+    const radius = clamp(17 * this.metrics.boardScale, 10, 16);
 
     const cat = this.add
-      .circle(pts[0].x, pts[0].y, 17, 0x71503c, 1)
-      .setStrokeStyle(4, 0x2a1912, 1)
+      .circle(pts[0].x, pts[0].y, radius, 0x71503c, 1)
+      .setStrokeStyle(clamp(3 * this.metrics.boardScale, 1.5, 3), 0x2a1912, 1)
       .setDepth(15);
 
     cat.hp = 45 + this.wave * 9;
     cat.pathIndex = 0;
     cat.speed =
-      STAGE_1.pacing.baseEnemySpeed * this.metrics.coverScale +
-      this.wave * STAGE_1.pacing.waveSpeedStep * this.metrics.coverScale;
+      STAGE_1.pacing.baseEnemySpeed * this.metrics.boardScale +
+      this.wave *
+        STAGE_1.pacing.waveSpeedStep *
+        this.metrics.boardScale;
     cat.dead = false;
     cat.path = pts;
+    cat.radius = radius;
 
     const earA = this.add
-      .triangle(cat.x - 10, cat.y - 16, 0, 14, 8, 0, 16, 14, 0x71503c, 1)
+      .triangle(0, 0, 0, 12, 7, 0, 14, 12, 0x71503c, 1)
       .setDepth(14);
 
     const earB = this.add
-      .triangle(cat.x + 10, cat.y - 16, 0, 14, 8, 0, 16, 14, 0x71503c, 1)
+      .triangle(0, 0, 0, 12, 7, 0, 14, 12, 0x71503c, 1)
       .setDepth(14);
 
     cat.ears = [earA, earB];
+    this.positionCatEars(cat);
 
     this.physics.world.enable(cat);
-    cat.body.setCircle(17);
+    cat.body.setCircle(radius);
     cat.body.setAllowGravity(false);
 
     this.enemies.push(cat);
+  }
+
+  positionCatEars(cat) {
+    const r = cat.radius;
+
+    cat.ears[0]
+      .setPosition(cat.x - r * 0.58, cat.y - r * 0.88)
+      .setScale(r / 17);
+
+    cat.ears[1]
+      .setPosition(cat.x + r * 0.58, cat.y - r * 0.88)
+      .setScale(r / 17);
   }
 
   update(time, delta) {
@@ -358,6 +509,7 @@ export class Stage1Scene extends Phaser.Scene {
 
     for (const guard of this.guardians.values()) {
       if (time < guard.nextShot) continue;
+
       const target = this.findTarget(guard);
 
       if (target) {
@@ -366,7 +518,9 @@ export class Stage1Scene extends Phaser.Scene {
       }
     }
 
-    this.enemies = this.enemies.filter((enemy) => enemy && !enemy.destroyed);
+    this.enemies = this.enemies.filter(
+      (enemy) => enemy && !enemy.destroyed
+    );
   }
 
   moveCat(cat, dt) {
@@ -388,12 +542,12 @@ export class Stage1Scene extends Phaser.Scene {
     }
 
     const step = Math.min(cat.speed * dt, dist);
+
     cat.x += (dx / dist) * step;
     cat.y += (dy / dist) * step;
 
     cat.body.reset(cat.x, cat.y);
-    cat.ears[0].setPosition(cat.x - 10, cat.y - 16);
-    cat.ears[1].setPosition(cat.x + 10, cat.y - 16);
+    this.positionCatEars(cat);
   }
 
   findTarget(guard) {
@@ -410,7 +564,10 @@ export class Stage1Scene extends Phaser.Scene {
         cat.y
       );
 
-      if (distance <= guard.range && cat.pathIndex > bestProgress) {
+      if (
+        distance <= guard.range &&
+        cat.pathIndex > bestProgress
+      ) {
         best = cat;
         bestProgress = cat.pathIndex;
       }
@@ -420,8 +577,10 @@ export class Stage1Scene extends Phaser.Scene {
   }
 
   fireShot(guard, target) {
+    const radius = clamp(6 * this.metrics.boardScale, 3.5, 6);
+
     const shot = this.add
-      .circle(guard.x, guard.y, 7, 0xffe36e, 1)
+      .circle(guard.x, guard.y, radius, 0xffe36e, 1)
       .setDepth(18);
 
     this.tweens.add({
@@ -431,10 +590,14 @@ export class Stage1Scene extends Phaser.Scene {
       duration: 145,
       onComplete: () => {
         shot.destroy();
+
         if (!target || target.dead) return;
 
         target.hp -= 16;
-        if (target.hp <= 0) this.killCat(target);
+
+        if (target.hp <= 0) {
+          this.killCat(target);
+        }
       }
     });
   }
@@ -467,7 +630,7 @@ export class Stage1Scene extends Phaser.Scene {
 
     if (this.homeHP <= 0) {
       this.waveRunning = false;
-      this.flashMessage("HOME OVERRUN — Graybox test ended");
+      this.flashMessage("HOME OVERRUN");
     } else {
       this.checkWaveEnd();
     }
@@ -484,16 +647,16 @@ export class Stage1Scene extends Phaser.Scene {
   }
 
   flashMessage(text) {
-    const { vw, vh } = this.metrics;
+    const { vw, boardY, boardH } = this.metrics;
 
     const message = this.add
-      .text(vw / 2, vh - 112, text, {
+      .text(vw / 2, boardY + boardH - 64, text, {
         fontFamily: "system-ui",
-        fontSize: "23px",
+        fontSize: `${clamp(boardH * 0.027, 13, 18)}px`,
         fontStyle: "800",
         color: "#fff4d1",
-        backgroundColor: "#2b2016cc",
-        padding: { x: 18, y: 10 }
+        backgroundColor: "#142033dd",
+        padding: { x: 14, y: 8 }
       })
       .setOrigin(0.5)
       .setDepth(50);
@@ -501,9 +664,9 @@ export class Stage1Scene extends Phaser.Scene {
     this.tweens.add({
       targets: message,
       alpha: 0,
-      y: vh - 138,
-      duration: 1300,
-      delay: 650,
+      y: message.y - 22,
+      duration: 1000,
+      delay: 600,
       onComplete: () => message.destroy()
     });
   }

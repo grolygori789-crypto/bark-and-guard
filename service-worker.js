@@ -1,34 +1,29 @@
-const CACHE_NAME = "bark-and-guard-v1";
-
+const CACHE_NAME = "bark-and-guard-v2";
 const BASE = new URL("./", self.location.href).pathname;
 
-const APP_SHELL = [
+const CORE_ASSETS = [
   BASE,
   BASE + "index.html",
   BASE + "manifest.webmanifest",
   BASE + "src/main.js",
   BASE + "src/pwa/install.js",
   BASE + "src/scenes/Stage1Scene.js",
-  BASE + "src/data/stage1.js",
-  BASE + "assets/app/icons/icon-192.png",
-  BASE + "assets/app/icons/icon-512.png",
-  BASE + "assets/app/icons/icon-maskable-192.png",
-  BASE + "assets/app/icons/icon-maskable-512.png",
-  BASE + "assets/app/icons/apple-touch-icon.png",
-  BASE + "assets/app/icons/favicon-32.png"
+  BASE + "src/data/stage1.js"
 ];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
+    caches
+      .open(CACHE_NAME)
+      .then((cache) => cache.addAll(CORE_ASSETS))
       .then(() => self.skipWaiting())
   );
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys()
+    caches
+      .keys()
       .then((keys) =>
         Promise.all(
           keys
@@ -43,7 +38,20 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
-  if (event.request.mode === "navigate") {
+  const url = new URL(event.request.url);
+  const sameOrigin = url.origin === self.location.origin;
+
+  // During development, HTML/JS/data should update immediately after a commit.
+  const networkFirst =
+    event.request.mode === "navigate" ||
+    (sameOrigin &&
+      (
+        url.pathname.endsWith(".js") ||
+        url.pathname.endsWith(".json") ||
+        url.pathname.endsWith(".webmanifest")
+      ));
+
+  if (networkFirst) {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
@@ -51,7 +59,7 @@ self.addEventListener("fetch", (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
           return response;
         })
-        .catch(() => caches.match(BASE + "index.html"))
+        .catch(() => caches.match(event.request))
     );
     return;
   }
@@ -61,12 +69,10 @@ self.addEventListener("fetch", (event) => {
       if (cached) return cached;
 
       return fetch(event.request).then((response) => {
-        if (!response || (response.status !== 200 && response.type !== "opaque")) {
-          return response;
+        if (response && (response.status === 200 || response.type === "opaque")) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
         }
-
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
         return response;
       });
     })
