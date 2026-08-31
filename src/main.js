@@ -11,6 +11,16 @@ const config = {
     width: window.innerWidth,
     height: window.innerHeight
   },
+  input: {
+    activePointers: 3
+  },
+  physics: {
+    default: "arcade",
+    arcade: {
+      gravity: { y: 0 },
+      debug: false
+    }
+  },
   render: {
     antialias: true,
     pixelArt: false,

@@ -4,8 +4,8 @@ export const STAGE_1 = {
   canvas: { width: 1536, height: 864 },
 
   backgrounds: {
-    day: "./assets/stages/stage-01/day/background.png",
-    night: "./assets/stages/stage-01/night/background.png"
+    day: "/bark-and-guard/assets/stages/stage-01/day/background.png",
+    night: "/bark-and-guard/assets/stages/stage-01/night/background.png"
   },
 
   defaultTimeOfDay: "day",
@@ -60,9 +60,9 @@ export const STAGE_1 = {
   ],
 
   pacing: {
-    baseEnemySpeed: 44,
-    waveSpeedStep: 1,
-    spawnIntervalMs: 720
+    baseEnemySpeed: 48,
+    waveSpeedStep: 1.5,
+    spawnIntervalMs: 700
   },
 
   startingTreats: 300,

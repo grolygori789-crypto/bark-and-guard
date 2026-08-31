@@ -6,7 +6,6 @@
     name="viewport"
     content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
   />
-
   <title>BARK & GUARD — Shih Tzu Defense</title>
 
   <meta name="theme-color" content="#071f41" />
@@ -16,9 +15,9 @@
   <meta name="apple-mobile-web-app-title" content="BARK & GUARD" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
-  <link rel="manifest" href="./manifest.webmanifest" />
-  <link rel="icon" type="image/png" sizes="32x32" href="./assets/app/icons/favicon-32.png" />
-  <link rel="apple-touch-icon" sizes="180x180" href="./assets/app/icons/apple-touch-icon.png" />
+  <link rel="manifest" href="/bark-and-guard/manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/bark-and-guard/assets/app/icons/favicon-32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/bark-and-guard/assets/app/icons/apple-touch-icon.png" />
 
   <style>
     html, body {
@@ -34,7 +33,10 @@
       position: fixed;
       inset: 0;
       overscroll-behavior: none;
-      touch-action: none;
+      background: #000;
+      touch-action: manipulation;
+      -webkit-user-select: none;
+      user-select: none;
     }
 
     #game {
@@ -50,6 +52,7 @@
       display: block;
       width: 100%;
       height: 100%;
+      touch-action: manipulation;
     }
   </style>
 </head>
@@ -57,7 +60,7 @@
   <div id="game"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/phaser@3.90.0/dist/phaser.min.js"></script>
-  <script type="module" src="./src/pwa/install.js"></script>
-  <script type="module" src="./src/main.js"></script>
+  <script type="module" src="/bark-and-guard/src/pwa/install.js"></script>
+  <script type="module" src="/bark-and-guard/src/main.js"></script>
 </body>
 </html>
