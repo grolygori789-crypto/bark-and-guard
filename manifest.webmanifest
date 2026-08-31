@@ -1,17 +1,42 @@
 {
-  "id":"/bark-and-guard/",
-  "name":"BARK & GUARD: Shih Tzu Defense",
-  "short_name":"BARK & GUARD",
-  "start_url":"/bark-and-guard/?source=pwa&build=6",
-  "scope":"/bark-and-guard/",
-  "display":"fullscreen",
-  "orientation":"landscape",
-  "background_color":"#051f41",
-  "theme_color":"#071f41",
-  "icons":[
-    {"src":"/bark-and-guard/assets/app/icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any"},
-    {"src":"/bark-and-guard/assets/app/icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any"},
-    {"src":"/bark-and-guard/assets/app/icons/icon-maskable-192.png","sizes":"192x192","type":"image/png","purpose":"maskable"},
-    {"src":"/bark-and-guard/assets/app/icons/icon-maskable-512.png","sizes":"512x512","type":"image/png","purpose":"maskable"}
+  "id": "/bark-and-guard/",
+  "name": "BARK & GUARD: Shih Tzu Defense",
+  "short_name": "BARK & GUARD",
+  "description": "A premium Shih Tzu tower-defense game.",
+  "start_url": "/bark-and-guard/?source=pwa&build=7",
+  "scope": "/bark-and-guard/",
+  "display": "standalone",
+  "display_override": [
+    "fullscreen",
+    "standalone"
+  ],
+  "orientation": "landscape",
+  "background_color": "#071a32",
+  "theme_color": "#071a32",
+  "icons": [
+    {
+      "src": "/bark-and-guard/assets/app/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/bark-and-guard/assets/app/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/bark-and-guard/assets/app/icons/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/bark-and-guard/assets/app/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ]
 }
