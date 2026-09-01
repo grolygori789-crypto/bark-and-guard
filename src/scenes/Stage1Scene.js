@@ -1,212 +1,360 @@
-import { STAGE_1 } from "../data/stage1.js";
+import { STAGE_1, GUARDIANS } from "../data/stage1.js";
 
-const W = STAGE_1.canvas.width;
-const H = STAGE_1.canvas.height;
-const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+const lerp = (a,b,t)=>a+(b-a)*t;
+const $ = (id)=>document.getElementById(id);
 
-export class Stage1Scene extends Phaser.Scene {
-  constructor() {
-    super("stage1");
-    this.coins = STAGE_1.startingTreats;
-    this.homeHP = STAGE_1.startingHomeHP;
-    this.wave = 1;
+export class Stage1Game {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext("2d", { alpha:false, desynchronized:true });
+    this.worldW = STAGE_1.world.width;
+    this.worldH = STAGE_1.world.height;
+    this.dpr = 1;
+    this.viewportW = 0;
+    this.viewportH = 0;
+    this.worldScale = 1;
+    this.worldX = 0;
+    this.worldY = 0;
+    this.last = performance.now();
+    this.accumSpawn = 0;
+    this.spawnRemaining = 0;
     this.waveRunning = false;
+    this.wave = 1;
+    this.treats = STAGE_1.startingTreats;
+    this.homeHP = STAGE_1.startingHomeHP;
+    this.speed = 1;
+    this.paused = false;
+    this.selectedSpot = null;
     this.guardians = new Map();
-    this.guardViews = [];
     this.enemies = [];
-    this.enemiesAlive = 0;
+    this.projectiles = [];
+    this.timeMode = localStorage.getItem("bark-guard-time") || "auto";
+    this.debug = new URLSearchParams(location.search).get("debug") === "1";
+    this.images = {};
+    this.path = STAGE_1.path.map(([x,y])=>({x:x*this.worldW,y:y*this.worldH}));
+    this.guardSpots = STAGE_1.guardSpots.map(([x,y])=>({x:x*this.worldW,y:y*this.worldH}));
+    this.pathSegments = this.buildPathSegments(this.path);
+    this.pathLength = this.pathSegments.at(-1).endDistance;
+    this.boundLoop = (t)=>this.loop(t);
   }
 
-  preload() {
-    this.load.image("day", STAGE_1.backgrounds.day);
-    this.load.image("night", STAGE_1.backgrounds.night);
+  async init() {
+    await Promise.all([
+      this.loadImage("day", STAGE_1.backgrounds.day),
+      this.loadImage("night", STAGE_1.backgrounds.night)
+    ]);
+    this.resolveTimeOfDay();
+    this.resize();
+    this.bindInput();
+    this.bindUI();
+    this.renderGuardianCards();
+    this.updateHUD();
+    window.addEventListener("resize", ()=>this.resize(), {passive:true});
+    window.addEventListener("orientationchange", ()=>setTimeout(()=>this.resize(),120), {passive:true});
+    $("loading-screen").classList.add("hidden");
+    requestAnimationFrame(this.boundLoop);
   }
 
-  create() {
-    const time = new URLSearchParams(location.search).get("time") === "night" ? "night" : "day";
-
-    // Full-viewport presentation layer. No fake duplicated image and no black bars.
-    this.viewportBg = this.add.rectangle(0, 0, 1, 1, 0x071a32, 1).setDepth(-3);
-    this.leftRail = this.add.rectangle(0, 0, 1, 1, 0x0b2442, 1).setDepth(-2);
-    this.rightRail = this.add.rectangle(0, 0, 1, 1, 0x0b2442, 1).setDepth(-2);
-
-    // Canonical 16:9 board: FIT only, so the stage is never cropped or stretched.
-    this.bg = this.add.image(0, 0, time).setOrigin(.5).setDepth(0);
-    this.pathG = this.add.graphics().setDepth(5);
-
-    this.makeGuards();
-    this.makeHUD();
-    this.layout();
-    this.bindCanvasInput();
-    this.scale.on("resize", this.layout, this);
-  }
-
-  metrics() {
-    const vw = this.scale.width;
-    const vh = this.scale.height;
-    const s = Math.min(vw / W, vh / H);
-    const dw = W * s;
-    const dh = H * s;
-    return { vw, vh, s, dw, dh, ox:(vw-dw)/2, oy:(vh-dh)/2 };
-  }
-
-  map(nx, ny) {
-    const m = this.m;
-    return { x:m.ox+nx*m.dw, y:m.oy+ny*m.dh };
-  }
-
-  layout() {
-    this.m = this.metrics();
-    const {vw,vh,dw,dh,ox,oy} = this.m;
-
-    this.viewportBg.setPosition(vw/2,vh/2).setSize(vw,vh);
-    this.bg.setPosition(vw/2,vh/2).setDisplaySize(dw,dh);
-
-    const railW = Math.max(0, ox);
-    this.leftRail.setVisible(railW > 0).setPosition(railW/2,vh/2).setSize(railW,vh);
-    this.rightRail.setVisible(railW > 0).setPosition(vw-railW/2,vh/2).setSize(railW,vh);
-
-    this.r = clamp(dh*.038,15,23);
-    this.drawPath();
-
-    STAGE_1.guardSpots.forEach(([x,y],i)=>{
-      const p=this.map(x,y), v=this.guardViews[i];
-      v.spot.setPosition(p.x,p.y).setRadius(this.r);
-      v.label.setPosition(p.x,p.y).setFontSize(clamp(dh*.028,12,17));
+  loadImage(key, src) {
+    return new Promise((resolve,reject)=>{
+      const img = new Image();
+      img.onload=()=>{this.images[key]=img;resolve(img)};
+      img.onerror=reject;
+      img.src=src;
     });
+  }
 
-    for (const g of this.guardians.values()) {
-      const [nx,ny]=STAGE_1.guardSpots[g.i], p=this.map(nx,ny);
-      g.x=p.x; g.y=p.y; g.range=150*this.m.s;
-      g.body.setPosition(p.x,p.y).setRadius(clamp(dh*.033,14,20));
+  resolveTimeOfDay() {
+    const forced = new URLSearchParams(location.search).get("time");
+    if (forced === "day" || forced === "night") this.timeOfDay = forced;
+    else if (this.timeMode === "day" || this.timeMode === "night") this.timeOfDay = this.timeMode;
+    else {
+      const hour = new Date().getHours();
+      this.timeOfDay = hour >= 6 && hour < 18 ? "day" : "night";
+    }
+    document.body.classList.toggle("night", this.timeOfDay === "night");
+    document.querySelectorAll("#time-mode button").forEach(b=>b.classList.toggle("active",b.dataset.time===this.timeMode));
+  }
+
+  setTimeMode(mode) {
+    this.timeMode = mode;
+    localStorage.setItem("bark-guard-time", mode);
+    this.resolveTimeOfDay();
+    this.toast(`Lighting: ${mode[0].toUpperCase()+mode.slice(1)}`);
+  }
+
+  buildPathSegments(points) {
+    let total=0;
+    return points.slice(0,-1).map((a,i)=>{
+      const b=points[i+1];
+      const length=Math.hypot(b.x-a.x,b.y-a.y);
+      const seg={a,b,length,startDistance:total,endDistance:total+length};
+      total+=length;
+      return seg;
+    });
+  }
+
+  pathPosition(distance) {
+    const d=clamp(distance,0,this.pathLength);
+    let seg=this.pathSegments[this.pathSegments.length-1];
+    for (const s of this.pathSegments) { if (d <= s.endDistance) { seg=s; break; } }
+    const t=seg.length ? (d-seg.startDistance)/seg.length : 0;
+    return {x:lerp(seg.a.x,seg.b.x,t),y:lerp(seg.a.y,seg.b.y,t)};
+  }
+
+  resize() {
+    const r=this.canvas.getBoundingClientRect();
+    this.viewportW=Math.max(1,r.width);
+    this.viewportH=Math.max(1,r.height);
+    this.dpr=clamp(window.devicePixelRatio||1,1,2.5);
+    this.canvas.width=Math.round(this.viewportW*this.dpr);
+    this.canvas.height=Math.round(this.viewportH*this.dpr);
+    this.ctx.setTransform(this.dpr,0,0,this.dpr,0,0);
+    // 20:9 master fills modern landscape displays. Slight crop only on narrower ratios.
+    this.worldScale=Math.max(this.viewportW/this.worldW,this.viewportH/this.worldH);
+    this.worldX=(this.viewportW-this.worldW*this.worldScale)/2;
+    this.worldY=(this.viewportH-this.worldH*this.worldScale)/2;
+  }
+
+  worldToScreen(p) { return {x:this.worldX+p.x*this.worldScale,y:this.worldY+p.y*this.worldScale}; }
+  screenToWorld(x,y) { return {x:(x-this.worldX)/this.worldScale,y:(y-this.worldY)/this.worldScale}; }
+
+  bindInput() {
+    this.canvas.addEventListener("pointerup", (e)=>{
+      if (this.paused) return;
+      const rect=this.canvas.getBoundingClientRect();
+      const p=this.screenToWorld(e.clientX-rect.left,e.clientY-rect.top);
+      let best=-1,bestD=Infinity;
+      this.guardSpots.forEach((s,i)=>{
+        if(this.guardians.has(i)) return;
+        const d=Math.hypot(p.x-s.x,p.y-s.y);
+        if(d<48 && d<bestD){best=i;bestD=d;}
+      });
+      if(best>=0) this.openPlacement(best);
+      else this.closePlacement();
+    }, {passive:true});
+  }
+
+  bindUI() {
+    $("start-wave").addEventListener("click",()=>this.startWave());
+    $("speed-button").addEventListener("click",()=>{
+      this.speed=this.speed===1?2:1; $("speed-button").textContent=`×${this.speed}`; this.toast(`Game speed ×${this.speed}`);
+    });
+    $("pause-button").addEventListener("click",()=>this.setPaused(true));
+    $("resume-button").addEventListener("click",()=>this.setPaused(false));
+    $("restart-button").addEventListener("click",()=>location.reload());
+    $("placement-close").addEventListener("click",()=>this.closePlacement());
+    $("settings-button").addEventListener("click",()=>this.toggleSettings(true));
+    $("settings-close").addEventListener("click",()=>this.toggleSettings(false));
+    document.querySelectorAll("#time-mode button").forEach(b=>b.addEventListener("click",()=>this.setTimeMode(b.dataset.time)));
+    $("install-app").addEventListener("click",async()=>{
+      const result=await window.BarkPWA?.install?.();
+      if(result?.status==="installed"||result?.status==="accepted") this.toast("BARK & GUARD installed");
+      else if(result?.status==="ios") this.toast("Safari: Share → Add to Home Screen",2600);
+      else if(result?.status==="manual") this.toast("Browser menu → Install app / Add to Home screen",3000);
+    });
+    window.addEventListener("bark:pwa-state",(e)=>this.updateInstallUI(e.detail));
+    this.updateInstallUI(window.BarkPWA?.state || {});
+  }
+
+  updateInstallUI(state={}) {
+    const button=$("install-app"), hint=$("install-hint");
+    if(!button) return;
+    if(state.installed){button.classList.add("hidden");hint.textContent="Installed. Open BARK & GUARD directly from its Home Screen icon.";}
+    else {button.classList.remove("hidden");hint.textContent=state.canPrompt?"Ready to install as an app.":"Install it once, then launch directly from its Home Screen icon.";}
+  }
+
+  toggleSettings(open) { $("settings-panel").classList.toggle("open",open); $("settings-panel").setAttribute("aria-hidden",String(!open)); if(open)this.closePlacement(); }
+  setPaused(value) { this.paused=value; $("pause-overlay").classList.toggle("open",value); $("pause-overlay").setAttribute("aria-hidden",String(!value)); }
+
+  renderGuardianCards() {
+    const wrap=$("guardian-cards"); wrap.innerHTML="";
+    for(const g of GUARDIANS){
+      const btn=document.createElement("button"); btn.className="guardian-card"; btn.dataset.id=g.id;
+      btn.innerHTML=`<i class="avatar" style="background:${g.color}">${g.name[0]}</i><strong>${g.name}</strong><span>${g.cost} treats</span><small>${g.role}</small>`;
+      btn.addEventListener("click",()=>this.placeGuardian(g.id)); wrap.appendChild(btn);
+    }
+  }
+
+  openPlacement(index) {
+    this.selectedSpot=index;
+    $("placement-title").textContent=`Select Shih Tzu · Spot ${index+1}`;
+    $("placement-panel").classList.add("open"); $("placement-panel").setAttribute("aria-hidden","false");
+    document.querySelectorAll(".guardian-card").forEach(btn=>{
+      const g=GUARDIANS.find(x=>x.id===btn.dataset.id); btn.disabled=this.treats<g.cost;
+    });
+  }
+  closePlacement(){this.selectedSpot=null;$("placement-panel").classList.remove("open");$("placement-panel").setAttribute("aria-hidden","true");}
+
+  placeGuardian(id) {
+    if(this.selectedSpot===null || this.guardians.has(this.selectedSpot)) return;
+    const type=GUARDIANS.find(g=>g.id===id); if(!type||this.treats<type.cost){this.toast("Not enough treats");return;}
+    const p=this.guardSpots[this.selectedSpot];
+    this.treats-=type.cost;
+    this.guardians.set(this.selectedSpot,{spot:this.selectedSpot,type,x:p.x,y:p.y,cooldown:0});
+    this.updateHUD(); this.toast(`${type.name} is guarding Spot ${this.selectedSpot+1}`); this.closePlacement();
+  }
+
+  startWave() {
+    if(this.paused||this.waveRunning||this.wave>STAGE_1.maxWaves) return;
+    this.waveRunning=true;
+    const count=6+(this.wave-1)*2;
+    this.spawnRemaining=count; this.accumSpawn=999;
+    $("start-wave").disabled=true; $("start-wave").querySelector("span:last-child").textContent="WAVE ACTIVE";
+    this.showWaveAlert(this.wave,count);
+    this.tryFullscreen();
+  }
+
+  async tryFullscreen(){
+    try{
+      if(!window.matchMedia("(display-mode: standalone)").matches && !document.fullscreenElement && document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
+      if(screen.orientation?.lock) await screen.orientation.lock("landscape");
+    }catch(_){ }
+  }
+
+  spawnEnemy() {
+    const hp=58+this.wave*12;
+    this.enemies.push({distance:0,hp,maxHp:hp,speed:STAGE_1.pacing.baseEnemySpeed+this.wave*STAGE_1.pacing.waveSpeedStep,slowUntil:0,slowFactor:1,dead:false});
+  }
+
+  update(dt, now) {
+    if(this.paused) return;
+    const sim=dt*this.speed;
+    if(this.waveRunning && this.spawnRemaining>0){
+      this.accumSpawn+=sim*1000;
+      while(this.spawnRemaining>0 && this.accumSpawn>=STAGE_1.pacing.spawnIntervalMs){
+        this.accumSpawn-=STAGE_1.pacing.spawnIntervalMs; this.spawnEnemy(); this.spawnRemaining--;
+      }
     }
 
-    const hh=clamp(dh*.066,36,48);
-    const hw=clamp(dw*.42,300,500);
-    const hy=oy+hh*.62;
-    this.hud.setPosition(vw/2,hy).setSize(hw,hh);
-    const fs=clamp(dh*.025,12,17);
-    this.coin.setPosition(vw/2-hw*.31,hy).setFontSize(fs);
-    this.hp.setPosition(vw/2,hy).setFontSize(fs);
-    this.waveT.setPosition(vw/2+hw*.31,hy).setFontSize(fs);
+    for(const e of this.enemies){
+      if(e.dead)continue;
+      const slow=now<e.slowUntil?e.slowFactor:1;
+      e.distance+=e.speed*slow*sim;
+      if(e.distance>=this.pathLength){e.dead=true;this.homeHP=Math.max(0,this.homeHP-1);this.updateHUD();}
+    }
 
-    this.stageT.setPosition(ox+12, oy+14).setFontSize(clamp(dh*.022,11,14));
+    for(const g of this.guardians.values()){
+      g.cooldown-=sim;
+      if(g.cooldown>0)continue;
+      let target=null,best=-1;
+      for(const e of this.enemies){
+        if(e.dead)continue; const ep=this.pathPosition(e.distance); const d=Math.hypot(ep.x-g.x,ep.y-g.y);
+        if(d<=g.type.range && e.distance>best){target=e;best=e.distance;}
+      }
+      if(target){
+        g.cooldown=g.type.cooldown; const tp=this.pathPosition(target.distance);
+        target.hp-=g.type.damage;
+        if(g.type.slow){target.slowFactor=g.type.slow;target.slowUntil=now+1000;}
+        this.projectiles.push({x:g.x,y:g.y,tx:tp.x,ty:tp.y,life:.16,max:.16,color:g.type.color});
+        if(target.hp<=0){target.dead=true;this.treats+=STAGE_1.economy.killReward;this.updateHUD();}
+      }
+    }
 
-    const bw=clamp(dw*.145,112,158), bh=clamp(dh*.07,36,46);
-    this.start.setPosition(ox+dw-14-bw/2,oy+dh-14-bh/2).setSize(bw,bh);
-    this.startT.setPosition(this.start.x,this.start.y).setFontSize(clamp(bh*.35,12,15));
+    this.projectiles.forEach(p=>p.life-=sim);
+    this.projectiles=this.projectiles.filter(p=>p.life>0);
+    this.enemies=this.enemies.filter(e=>!e.dead);
+
+    if(this.waveRunning && this.spawnRemaining===0 && this.enemies.length===0){
+      this.waveRunning=false;
+      if(this.homeHP<=0){this.toast("Home overrun — restart Stage 1",3000);return;}
+      this.treats+=STAGE_1.economy.waveReward;
+      this.wave++;
+      if(this.wave>STAGE_1.maxWaves){this.toast("STAGE 1 CLEARED!",4000);}
+      else this.toast(`Wave cleared · +${STAGE_1.economy.waveReward} treats`,2200);
+      $("start-wave").disabled=this.wave>STAGE_1.maxWaves;
+      $("start-wave").querySelector("span:last-child").textContent=this.wave>STAGE_1.maxWaves?"STAGE CLEAR":"START WAVE";
+      this.updateHUD();
+    }
   }
 
-  drawPath() {
-    const pts=STAGE_1.path.map(([x,y])=>this.map(x,y));
-    this.pathG.clear().lineStyle(clamp(this.m.dh*.004,2,3.5),0xffdc72,.62).beginPath().moveTo(pts[0].x,pts[0].y);
-    for(let i=1;i<pts.length;i++) this.pathG.lineTo(pts[i].x,pts[i].y);
-    this.pathG.strokePath();
+  loop(now) {
+    const dt=clamp((now-this.last)/1000,0,0.05); this.last=now;
+    this.update(dt,now); this.render(now); requestAnimationFrame(this.boundLoop);
   }
 
-  makeGuards() {
-    STAGE_1.guardSpots.forEach((_,i)=>{
-      const spot=this.add.circle(0,0,18,0x238b6c,.62).setStrokeStyle(2.5,0xe2fff0,.94).setDepth(10).setInteractive();
-      const label=this.add.text(0,0,String(i+1),{fontFamily:"system-ui",fontSize:"15px",fontStyle:"800",color:"#fff"}).setOrigin(.5).setDepth(11);
-      spot.on("pointerdown",()=>this.place(i));
-      this.guardViews.push({spot,label});
+  render(now) {
+    const c=this.ctx, w=this.viewportW,h=this.viewportH;
+    c.save(); c.setTransform(this.dpr,0,0,this.dpr,0,0); c.clearRect(0,0,w,h);
+    const img=this.images[this.timeOfDay]; c.drawImage(img,this.worldX,this.worldY,this.worldW*this.worldScale,this.worldH*this.worldScale);
+    // Very light readability vignette only at extreme top edge behind HUD.
+    const grad=c.createLinearGradient(0,0,0,92); grad.addColorStop(0,this.timeOfDay==="night"?"rgba(3,17,28,.34)":"rgba(255,255,255,.10)"); grad.addColorStop(1,"rgba(0,0,0,0)"); c.fillStyle=grad;c.fillRect(0,0,w,100);
+    this.drawMarkers(c,now); this.drawEnemies(c); this.drawGuardians(c); this.drawProjectiles(c);
+    if(this.debug)this.drawDebug(c);
+    c.restore();
+  }
+
+  drawMarkers(c,now) {
+    const pulse=1+Math.sin(now/450)*.06;
+    // Guard placement rings.
+    this.guardSpots.forEach((p,i)=>{
+      if(this.guardians.has(i))return;
+      const s=this.worldToScreen(p),r=18*this.worldScale*pulse;
+      c.beginPath();c.arc(s.x,s.y,r,0,Math.PI*2);c.fillStyle=this.selectedSpot===i?"rgba(255,213,111,.42)":"rgba(104,207,170,.22)";c.fill();
+      c.lineWidth=2.2;c.strokeStyle=this.selectedSpot===i?"rgba(255,230,156,.95)":"rgba(231,255,247,.92)";c.stroke();
+      c.beginPath();c.arc(s.x,s.y,4*this.worldScale,0,Math.PI*2);c.fillStyle="rgba(255,255,255,.94)";c.fill();
     });
+    // Start and Home markers.
+    const spawn=this.worldToScreen(this.path[0]),goal=this.worldToScreen(this.path.at(-1));
+    this.drawPill(c,spawn.x-2,spawn.y-22,"START","#47b98f");
+    this.drawPill(c,goal.x+2,goal.y-20,"HOME","#55a9d5");
   }
 
-  makeHUD() {
-    const style={fontFamily:"system-ui",fontSize:"14px",fontStyle:"700",color:"#fff4d1"};
-    this.hud=this.add.rectangle(0,0,1,1,0x111722,.82).setStrokeStyle(1.5,0xe6c679,.45).setDepth(30);
-    this.coin=this.add.text(0,0,"",style).setOrigin(.5).setDepth(31);
-    this.hp=this.add.text(0,0,"",style).setOrigin(.5).setDepth(31);
-    this.waveT=this.add.text(0,0,"",style).setOrigin(.5).setDepth(31);
-    this.stageT=this.add.text(0,0,"STAGE 1 • DAY",{fontFamily:"system-ui",fontSize:"13px",fontStyle:"800",color:"#fff6d7",stroke:"#241b13",strokeThickness:3}).setOrigin(0,.5).setDepth(31);
-    this.start=this.add.rectangle(0,0,1,1,0x9d4f28,.96).setStrokeStyle(2,0xffd78a,.86).setDepth(30).setInteractive();
-    this.startT=this.add.text(0,0,"START WAVE",{fontFamily:"system-ui",fontSize:"15px",fontStyle:"800",color:"#fff5d9"}).setOrigin(.5).setDepth(31);
-    this.start.on("pointerdown",()=>this.startTap());
-    this.refreshHUD();
+  drawPill(c,x,y,text,color){
+    c.save();c.font="800 10px system-ui";const tw=c.measureText(text).width,pw=tw+14,ph=21;
+    c.fillStyle=color;c.strokeStyle="rgba(255,255,255,.9)";c.lineWidth=1.3;this.roundRect(c,x-pw/2,y-ph/2,pw,ph,9);c.fill();c.stroke();
+    c.fillStyle="#fff";c.textAlign="center";c.textBaseline="middle";c.fillText(text,x,y+.5);c.restore();
   }
 
-  refreshHUD(){
-    this.coin.setText(`TREATS ${this.coins}`);
-    this.hp.setText(`HOME ${this.homeHP}`);
-    this.waveT.setText(`WAVE ${this.wave}`);
+  drawEnemies(c){
+    for(const e of this.enemies){
+      const p=this.worldToScreen(this.pathPosition(e.distance)), r=12*this.worldScale;
+      c.save();c.translate(p.x,p.y);
+      c.fillStyle="#745244";c.strokeStyle="#3e2d28";c.lineWidth=2;
+      c.beginPath();c.arc(0,0,r,0,Math.PI*2);c.fill();c.stroke();
+      c.beginPath();c.moveTo(-r*.72,-r*.62);c.lineTo(-r*.25,-r*1.35);c.lineTo(0,-r*.64);c.closePath();c.fill();c.stroke();
+      c.beginPath();c.moveTo(r*.72,-r*.62);c.lineTo(r*.25,-r*1.35);c.lineTo(0,-r*.64);c.closePath();c.fill();c.stroke();
+      const hp=clamp(e.hp/e.maxHp,0,1);c.fillStyle="rgba(28,44,51,.48)";this.roundRect(c,-r,r+5,r*2,4,2);c.fill();c.fillStyle="#77d49b";this.roundRect(c,-r,r+5,r*2*hp,4,2);c.fill();c.restore();
+    }
   }
 
-  bindCanvasInput(){
-    const c=this.sys.game.canvas;
-    this.domTap=(e)=>{
-      const r=c.getBoundingClientRect();
-      const x=(e.clientX-r.left)*(this.scale.width/r.width);
-      const y=(e.clientY-r.top)*(this.scale.height/r.height);
-
-      if(Math.abs(x-this.start.x)<=this.start.width/2 && Math.abs(y-this.start.y)<=this.start.height/2){
-        e.preventDefault(); this.startTap(); return;
-      }
-
-      for(let i=0;i<STAGE_1.guardSpots.length;i++){
-        if(this.guardians.has(i)) continue;
-        const p=this.map(...STAGE_1.guardSpots[i]), dx=x-p.x, dy=y-p.y, rr=this.r*1.4;
-        if(dx*dx+dy*dy<=rr*rr){e.preventDefault();this.place(i);return;}
-      }
-    };
-    c.addEventListener("pointerup",this.domTap,{passive:false});
+  drawGuardians(c){
+    for(const g of this.guardians.values()){
+      const p=this.worldToScreen(g),r=16*this.worldScale;
+      c.save();c.translate(p.x,p.y);
+      c.shadowColor="rgba(21,63,68,.22)";c.shadowBlur=8;
+      c.fillStyle=g.type.color;c.strokeStyle="rgba(255,255,255,.94)";c.lineWidth=2.5;c.beginPath();c.arc(0,0,r,0,Math.PI*2);c.fill();c.stroke();c.shadowBlur=0;
+      c.fillStyle="#fff";c.font=`900 ${Math.max(9,11*this.worldScale)}px system-ui`;c.textAlign="center";c.textBaseline="middle";c.fillText(g.type.name[0],0,.5);c.restore();
+    }
   }
 
-  startTap(){
-    if(this.waveRunning)return;
-    this.startWave();
-    this.fullscreen();
+  drawProjectiles(c){
+    for(const p of this.projectiles){
+      const t=1-p.life/p.max,a=this.worldToScreen(p),b=this.worldToScreen({x:p.tx,y:p.ty});
+      const x=lerp(a.x,b.x,t),y=lerp(a.y,b.y,t);c.save();c.globalAlpha=clamp(p.life/p.max,0,1);c.fillStyle=p.color;c.shadowColor=p.color;c.shadowBlur=9;c.beginPath();c.arc(x,y,4,0,Math.PI*2);c.fill();c.restore();
+    }
   }
 
-  async fullscreen(){
-    try{
-      if(!document.fullscreenElement&&document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
-      if(screen.orientation?.lock) await screen.orientation.lock("landscape");
-    }catch(_){}
+  drawDebug(c){
+    c.save();c.strokeStyle="#ffd24a";c.lineWidth=2;c.beginPath();this.path.forEach((p,i)=>{const s=this.worldToScreen(p);i?c.lineTo(s.x,s.y):c.moveTo(s.x,s.y)});c.stroke();
+    c.font="800 11px system-ui";c.textAlign="center";c.textBaseline="middle";
+    this.guardSpots.forEach((p,i)=>{const s=this.worldToScreen(p);c.fillStyle="#238b6c";c.beginPath();c.arc(s.x,s.y,16,0,Math.PI*2);c.fill();c.fillStyle="#fff";c.fillText(String(i+1),s.x,s.y);});c.restore();
   }
 
-  place(i){
-    if(this.guardians.has(i)||this.coins<100)return;
-    this.coins-=100;
-    const p=this.map(...STAGE_1.guardSpots[i]);
-    const body=this.add.circle(p.x,p.y,18,0xf4e6c9,1).setStrokeStyle(4,0x4a3022,1).setDepth(13);
-    this.guardians.set(i,{i,body,x:p.x,y:p.y,range:150*this.m.s,nextShot:0});
-    this.guardViews[i].spot.disableInteractive().setFillStyle(0x397a48,.22);
-    this.guardViews[i].label.setVisible(false);
-    this.refreshHUD();
+  roundRect(c,x,y,w,h,r){
+    if(w<=0||h<=0)return;c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();
   }
 
-  startWave(){
-    this.waveRunning=true;
-    const n=6+(this.wave-1)*2;
-    this.enemiesAlive=n;
-    for(let i=0;i<n;i++) this.time.delayedCall(i*STAGE_1.pacing.spawnIntervalMs,()=>this.spawnEnemy());
+  updateHUD(){
+    $("hud-treats").textContent=this.treats;
+    const pct=Math.round((this.homeHP/STAGE_1.startingHomeHP)*100);$("hud-home").textContent=`${pct}%`;$("hud-home-bar").style.width=`${pct}%`;
+    $("hud-wave").textContent=`${Math.min(this.wave,STAGE_1.maxWaves)} / ${STAGE_1.maxWaves}`;
+    if(this.selectedSpot!==null)this.openPlacement(this.selectedSpot);
   }
 
-  spawnEnemy(){
-    const path=STAGE_1.path.map(([x,y])=>this.map(x,y));
-    const e=this.add.circle(path[0].x,path[0].y,14,0x71503c,1).setStrokeStyle(3,0x2a1912,1).setDepth(15);
-    e.hp=45+this.wave*9;e.path=path;e.pathIndex=0;e.speed=(STAGE_1.pacing.baseEnemySpeed+this.wave*STAGE_1.pacing.waveSpeedStep)*this.m.s;e.dead=false;
-    this.enemies.push(e);
+  showWaveAlert(wave,count){
+    const el=$("wave-alert");el.innerHTML=`<small>ENEMIES INCOMING · ${count}</small>WAVE ${wave}`;el.classList.add("show");setTimeout(()=>el.classList.remove("show"),1350);
   }
-
-  update(time,delta){
-    const dt=delta/1000;
-    for(const e of this.enemies)if(e&&!e.dead)this.move(e,dt);
-    for(const g of this.guardians.values())if(time>=g.nextShot){const t=this.target(g);if(t){g.nextShot=time+780;this.fire(g,t);}}
-    this.enemies=this.enemies.filter(e=>e&&!e.destroyed);
-  }
-
-  move(e,dt){
-    const ni=e.pathIndex+1;if(ni>=e.path.length){this.reach(e);return;}
-    const t=e.path[ni],dx=t.x-e.x,dy=t.y-e.y,d=Math.hypot(dx,dy);
-    if(d<4){e.pathIndex++;return;}
-    const s=Math.min(e.speed*dt,d);e.x+=dx/d*s;e.y+=dy/d*s;
-  }
-
-  target(g){let best=null,p=-1;for(const e of this.enemies){if(!e||e.dead)continue;const d=Phaser.Math.Distance.Between(g.x,g.y,e.x,e.y);if(d<=g.range&&e.pathIndex>p){best=e;p=e.pathIndex;}}return best;}
-  fire(g,e){const s=this.add.circle(g.x,g.y,5,0xffe36e,1).setDepth(18);this.tweens.add({targets:s,x:e.x,y:e.y,duration:145,onComplete:()=>{s.destroy();if(!e||e.dead)return;e.hp-=16;if(e.hp<=0)this.kill(e);}});}
-  kill(e){if(e.dead)return;e.dead=true;e.destroy();e.destroyed=true;this.coins+=18;this.enemiesAlive--;this.refreshHUD();this.endCheck();}
-  reach(e){if(e.dead)return;e.dead=true;e.destroy();e.destroyed=true;this.homeHP=Math.max(0,this.homeHP-1);this.enemiesAlive--;this.refreshHUD();if(this.homeHP<=0)this.waveRunning=false;else this.endCheck();}
-  endCheck(){if(this.enemiesAlive>0)return;this.waveRunning=false;this.coins+=75;this.wave++;this.refreshHUD();}
+  toast(message,duration=1800){const el=$("toast");el.textContent=message;el.classList.add("show");clearTimeout(this.toastTimer);this.toastTimer=setTimeout(()=>el.classList.remove("show"),duration);}
 }

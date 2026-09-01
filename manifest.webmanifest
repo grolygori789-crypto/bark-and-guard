@@ -2,14 +2,18 @@
   "id": "/bark-and-guard/",
   "name": "BARK & GUARD: Shih Tzu Defense",
   "short_name": "BARK & GUARD",
-  "description": "A premium Shih Tzu tower-defense game.",
+  "description": "A premium Shih Tzu garden-defense game.",
   "start_url": "/bark-and-guard/",
   "scope": "/bark-and-guard/",
   "display": "standalone",
   "orientation": "landscape",
-  "background_color": "#071a32",
-  "theme_color": "#071a32",
+  "background_color": "#f6f0e8",
+  "theme_color": "#f6f0e8",
   "prefer_related_applications": false,
+  "categories": [
+    "games",
+    "entertainment"
+  ],
   "icons": [
     {
       "src": "/bark-and-guard/assets/app/icons/icon-192.png",
