@@ -26,22 +26,38 @@
       <div class="loading-subtitle">Preparing the garden…</div>
     </div>
 
+    <!-- Compact top-left HUD: deliberately leaves the house area unobstructed. -->
     <header id="hud" class="hud glass-ui">
-      <div class="brand-chip">
+      <div class="brand-orb" aria-label="BARK & GUARD">
         <img src="/bark-and-guard/assets/app/icons/icon-192.png" alt="" />
-        <div><strong>BARK &amp; GUARD</strong><span>SHIH TZU DEFENSE</span></div>
       </div>
 
-      <div class="stat-chip treats-chip"><span class="stat-icon">◆</span><div><small>TREATS</small><strong id="hud-treats">300</strong></div></div>
-      <div class="stat-chip hp-chip"><span class="stat-icon">♥</span><div><small>HOME HP</small><strong id="hud-home">100%</strong></div><div class="hp-bar"><i id="hud-home-bar"></i></div></div>
-      <div class="stat-chip wave-chip"><span class="stat-icon">●</span><div><small>WAVE</small><strong id="hud-wave">1 / 15</strong></div></div>
+      <div class="stat-chip treats-chip">
+        <span class="stat-icon">◆</span>
+        <div><small>TREATS</small><strong id="hud-treats">300</strong></div>
+      </div>
 
-      <div class="hud-spacer"></div>
-      <button id="start-wave" class="premium-button start-button" type="button"><span class="play-mark">▶</span><span>START WAVE</span></button>
+      <div class="stat-chip hp-chip">
+        <span class="stat-icon">♥</span>
+        <div><small>HOME HP</small><strong id="hud-home">100%</strong></div>
+        <div class="hp-bar"><i id="hud-home-bar"></i></div>
+      </div>
+
+      <div class="stat-chip wave-chip">
+        <span class="stat-icon">●</span>
+        <div><small>WAVE</small><strong id="hud-wave">1 / 15</strong></div>
+      </div>
+    </header>
+
+    <!-- Action controls live bottom-right so the modern house remains visible. -->
+    <nav id="action-dock" class="action-dock glass-ui" aria-label="Game controls">
+      <button id="start-wave" class="premium-button start-button" type="button">
+        <span class="play-mark">▶</span><span>START WAVE</span>
+      </button>
       <button id="speed-button" class="round-control" type="button" aria-label="Game speed">×1</button>
       <button id="pause-button" class="round-control" type="button" aria-label="Pause">Ⅱ</button>
       <button id="settings-button" class="round-control" type="button" aria-label="Settings">⚙</button>
-    </header>
+    </nav>
 
     <div id="wave-alert" class="wave-alert glass-ui" aria-live="polite"></div>
     <div id="toast" class="toast glass-ui" aria-live="polite"></div>
@@ -55,24 +71,57 @@
     </section>
 
     <aside id="settings-panel" class="settings-panel glass-ui" aria-hidden="true">
-      <div class="panel-heading"><div><small>BARK &amp; GUARD</small><strong>Settings</strong></div><button id="settings-close" type="button">×</button></div>
+      <div class="panel-heading">
+        <div><small>BARK &amp; GUARD</small><strong>Settings</strong></div>
+        <button id="settings-close" type="button" aria-label="Close settings">×</button>
+      </div>
+
       <div class="setting-group">
         <label>Garden lighting</label>
         <div class="segmented" id="time-mode">
-          <button data-time="auto" class="active">Auto</button><button data-time="day">Day</button><button data-time="night">Night</button>
+          <button data-time="auto" class="active">Auto</button>
+          <button data-time="day">Day</button>
+          <button data-time="night">Night</button>
         </div>
       </div>
+
       <button id="install-app" class="install-action" type="button">Install BARK &amp; GUARD</button>
-      <p id="install-hint" class="install-hint">Install it once, then launch the game directly from its Home Screen icon.</p>
+      <p id="install-hint" class="install-hint">Install once, then launch directly from the Home Screen icon.</p>
+
       <div class="setting-row"><span>Stage</span><strong>1 · Front Garden</strong></div>
-      <div class="setting-row"><span>Build</span><strong>Stage 1 Production</strong></div>
+      <div class="setting-row"><span>Build</span><strong>Production Integration 2</strong></div>
     </aside>
 
     <div id="pause-overlay" class="pause-overlay" aria-hidden="true">
       <section class="pause-card glass-ui">
-        <small>GAME PAUSED</small><h2>BARK &amp; GUARD</h2>
+        <small>GAME PAUSED</small>
+        <h2>BARK &amp; GUARD</h2>
         <button id="resume-button" class="premium-button">RESUME</button>
         <button id="restart-button" class="secondary-button">Restart Stage</button>
+      </section>
+    </div>
+
+    <!-- Automatically shown on a browser launch until the app is installed. -->
+    <div id="install-gate" class="install-gate" aria-hidden="true">
+      <section class="install-card glass-ui">
+        <img class="install-icon" src="/bark-and-guard/assets/app/icons/icon-192.png" alt="" />
+        <div class="install-copy">
+          <small>PLAY LIKE A REAL APP</small>
+          <h1>BARK &amp; GUARD</h1>
+          <p>Install once for a clean full-screen landscape launch from your Home Screen icon.</p>
+        </div>
+        <button id="install-now" class="premium-button install-primary" type="button">INSTALL APP</button>
+        <button id="play-browser" class="secondary-button install-secondary" type="button">PLAY IN BROWSER</button>
+        <p id="install-gate-hint" class="install-gate-hint">Preparing install…</p>
+      </section>
+    </div>
+
+    <!-- Browser security cannot rotate a physical device; block portrait gameplay instead. -->
+    <div id="orientation-gate" class="orientation-gate" aria-hidden="true">
+      <section class="orientation-card glass-ui">
+        <div class="rotate-icon">↻</div>
+        <strong>Rotate to landscape</strong>
+        <span>BARK &amp; GUARD is designed for landscape play.</span>
       </section>
     </div>
   </main>

@@ -97,9 +97,18 @@ export class Stage1Game {
 
   pathPosition(distance) {
     const d=clamp(distance,0,this.pathLength);
-    let seg=this.pathSegments[this.pathSegments.length-1];
-    for (const s of this.pathSegments) { if (d <= s.endDistance) { seg=s; break; } }
-    const t=seg.length ? (d-seg.startDistance)/seg.length : 0;
+
+    // Dense centerline + binary segment lookup keeps every enemy exactly on the
+    // locked stone walkway without cutting across grass on tight curves.
+    let lo=0, hi=this.pathSegments.length-1;
+    while(lo<hi){
+      const mid=(lo+hi)>>1;
+      if(d<=this.pathSegments[mid].endDistance) hi=mid;
+      else lo=mid+1;
+    }
+
+    const seg=this.pathSegments[lo];
+    const t=seg.length ? clamp((d-seg.startDistance)/seg.length,0,1) : 0;
     return {x:lerp(seg.a.x,seg.b.x,t),y:lerp(seg.a.y,seg.b.y,t)};
   }
 
@@ -161,7 +170,7 @@ export class Stage1Game {
   updateInstallUI(state={}) {
     const button=$("install-app"), hint=$("install-hint");
     if(!button) return;
-    if(state.installed){button.classList.add("hidden");hint.textContent="Installed. Open BARK & GUARD directly from its Home Screen icon.";}
+    if(state.installed||state.installedHint){button.classList.add("hidden");hint.textContent="Installed. Open BARK & GUARD directly from its Home Screen icon.";}
     else {button.classList.remove("hidden");hint.textContent=state.canPrompt?"Ready to install as an app.":"Install it once, then launch directly from its Home Screen icon.";}
   }
 
@@ -207,8 +216,18 @@ export class Stage1Game {
   }
 
   async tryFullscreen(){
+    if(window.BarkPWA?.enterImmersive){
+      await window.BarkPWA.enterImmersive();
+      return;
+    }
+
     try{
-      if(!window.matchMedia("(display-mode: standalone)").matches && !document.fullscreenElement && document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
+      if(!window.matchMedia("(display-mode: standalone)").matches && !document.fullscreenElement && document.documentElement.requestFullscreen){
+        await document.documentElement.requestFullscreen({navigationUI:"hide"});
+      }
+    }catch(_){ }
+
+    try{
       if(screen.orientation?.lock) await screen.orientation.lock("landscape");
     }catch(_){ }
   }
@@ -279,7 +298,7 @@ export class Stage1Game {
     c.save(); c.setTransform(this.dpr,0,0,this.dpr,0,0); c.clearRect(0,0,w,h);
     const img=this.images[this.timeOfDay]; c.drawImage(img,this.worldX,this.worldY,this.worldW*this.worldScale,this.worldH*this.worldScale);
     // Very light readability vignette only at extreme top edge behind HUD.
-    const grad=c.createLinearGradient(0,0,0,92); grad.addColorStop(0,this.timeOfDay==="night"?"rgba(3,17,28,.34)":"rgba(255,255,255,.10)"); grad.addColorStop(1,"rgba(0,0,0,0)"); c.fillStyle=grad;c.fillRect(0,0,w,100);
+    const grad=c.createLinearGradient(0,0,0,78); grad.addColorStop(0,this.timeOfDay==="night"?"rgba(3,17,28,.16)":"rgba(255,255,255,.06)"); grad.addColorStop(1,"rgba(0,0,0,0)"); c.fillStyle=grad;c.fillRect(0,0,Math.min(w,680),84);
     this.drawMarkers(c,now); this.drawEnemies(c); this.drawGuardians(c); this.drawProjectiles(c);
     if(this.debug)this.drawDebug(c);
     c.restore();
@@ -298,7 +317,7 @@ export class Stage1Game {
     // Start and Home markers.
     const spawn=this.worldToScreen(this.path[0]),goal=this.worldToScreen(this.path.at(-1));
     this.drawPill(c,spawn.x-2,spawn.y-22,"START","#47b98f");
-    this.drawPill(c,goal.x+2,goal.y-20,"HOME","#55a9d5");
+    this.drawPill(c,goal.x+2,goal.y-15,"HOME","#55a9d5");
   }
 
   drawPill(c,x,y,text,color){

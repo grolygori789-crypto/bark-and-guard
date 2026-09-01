@@ -5,9 +5,9 @@
   "description": "A premium Shih Tzu garden-defense game.",
   "start_url": "/bark-and-guard/",
   "scope": "/bark-and-guard/",
-  "display": "standalone",
+  "display": "fullscreen",
   "orientation": "landscape",
-  "background_color": "#f6f0e8",
+  "background_color": "#143a43",
   "theme_color": "#f6f0e8",
   "prefer_related_applications": false,
   "categories": [
